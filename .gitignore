@@ -1,0 +1,16 @@
+# Python
+venv/
+__pycache__/
+*.pkl
+*.pyc
+.env
+
+# Node
+mudra-frontend/node_modules/
+mudra-frontend/.next/
+
+# Data (optional — comment out if you want to push dataset)
+# dataset/
+
+# MediaPipe model
+hand_landmarker.task
