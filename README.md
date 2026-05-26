@@ -2,7 +2,7 @@
 
 
 
-Real-time Bharatanatyam hand gesture (mudra) detection using Computer Vision and Machine Learning.
+Real-time Kathak hand gesture (mudra) detection using Computer Vision and Machine Learning.
 
 
 
