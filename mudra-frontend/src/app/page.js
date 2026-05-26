@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 
 const MUDRAS = [
   {
@@ -74,12 +73,11 @@ export default function Home() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
         setStarted(true);
         setError(null);
       }
-    } catch {
-      setError("Camera access denied. Please allow camera permissions.");
+    } catch(err) {
+      setError("Camera error: " + err.message);
     }
   }, []);
 
@@ -174,14 +172,8 @@ export default function Home() {
   const displayName = selected ? selected.name : mudra;
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        color: "white",
-        background: "linear-gradient(135deg, #0a0a0f 0%, #0f0a1e 50%, #0a0f1e 100%)",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
+    <main style={{ minHeight: "100vh", color: "white", background: "linear-gradient(135deg, #0a0a0f 0%, #0f0a1e 50%, #0a0f1e 100%)", fontFamily: "system-ui, sans-serif" }}>
+
       {/* Gradient orbs */}
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: 0, left: 0, width: "500px", height: "500px", borderRadius: "50%", opacity: 0.2, background: "radial-gradient(circle, #7c3aed, transparent)" }} />
@@ -208,33 +200,27 @@ export default function Home() {
 
           {/* Camera */}
           <div>
-            <div style={{
-              position: "relative",
-              borderRadius: "16px",
-              overflow: "hidden",
-              aspectRatio: "16/9",
-              background: "rgba(255,255,255,0.05)",
-              backdropFilter: "blur(12px)",
-              border: detected ? "1px solid rgba(168,85,247,0.6)" : "1px solid rgba(255,255,255,0.1)",
-              boxShadow: detected ? "0 0 30px rgba(168,85,247,0.4)" : "none",
-              transition: "all 0.3s ease",
-            }}>
+            <div style={{ position: "relative", borderRadius: "16px", overflow: "hidden", aspectRatio: "16/9", background: "rgba(255,255,255,0.05)", backdropFilter: "blur(12px)", border: detected ? "1px solid rgba(168,85,247,0.6)" : "1px solid rgba(255,255,255,0.1)", boxShadow: detected ? "0 0 30px rgba(168,85,247,0.4)" : "none", transition: "all 0.3s ease" }}>
+
               {!started ? (
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1a0533, #0d1533)" }}>
                   <div style={{ fontSize: "4rem", marginBottom: "24px" }}>🙏</div>
                   <h2 style={{ fontSize: "1.5rem", fontWeight: 600, marginBottom: "8px" }}>Ready to detect</h2>
                   <p style={{ color: "#9ca3af", marginBottom: "32px", fontSize: "0.9rem" }}>Allow camera access to begin</p>
-                  <button
-                    onClick={startCamera}
-                    style={{ padding: "12px 32px", borderRadius: "50px", fontWeight: 600, color: "white", border: "none", cursor: "pointer", fontSize: "1rem", background: "linear-gradient(135deg, #7c3aed, #db2777)" }}
-                  >
+                  <button onClick={startCamera} style={{ padding: "12px 32px", borderRadius: "50px", fontWeight: 600, color: "white", border: "none", cursor: "pointer", fontSize: "1rem", background: "linear-gradient(135deg, #7c3aed, #db2777)" }}>
                     Enable Camera
                   </button>
                   {error && <p style={{ color: "#f87171", marginTop: "16px", fontSize: "0.85rem" }}>{error}</p>}
                 </div>
               ) : (
                 <>
-                  <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} muted playsInline />
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}
+                  />
                   <canvas id="overlay-canvas" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />
 
                   {/* Status badge */}
@@ -314,13 +300,7 @@ export default function Home() {
                   <button
                     key={m.name}
                     onClick={() => setSelected(selected?.name === m.name ? null : m)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: "12px",
-                      padding: "10px 12px", borderRadius: "12px", textAlign: "left",
-                      border: mudra === m.name && detected ? "1px solid rgba(168,85,247,0.4)" : "1px solid transparent",
-                      background: mudra === m.name && detected ? "rgba(168,85,247,0.2)" : selected?.name === m.name ? "rgba(255,255,255,0.1)" : "transparent",
-                      cursor: "pointer", color: "white", width: "100%", transition: "all 0.2s ease",
-                    }}
+                    style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "12px", textAlign: "left", border: mudra === m.name && detected ? "1px solid rgba(168,85,247,0.4)" : "1px solid transparent", background: mudra === m.name && detected ? "rgba(168,85,247,0.2)" : selected?.name === m.name ? "rgba(255,255,255,0.1)" : "transparent", cursor: "pointer", color: "white", width: "100%", transition: "all 0.2s ease" }}
                   >
                     <span style={{ fontSize: "1.2rem" }}>{m.emoji}</span>
                     <div>
