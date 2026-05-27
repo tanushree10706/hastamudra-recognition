@@ -68,18 +68,24 @@ export default function Home() {
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState(null);
 
-  const startCamera = useCallback(async () => {
+const streamRef = useRef(null);
+
+const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setStarted(true);
-        setError(null);
-      }
+      streamRef.current = stream;
+      setStarted(true);
+      setError(null);
     } catch(err) {
       setError("Camera error: " + err.message);
     }
   }, []);
+
+useEffect(() => {
+  if (started && videoRef.current && streamRef.current) {
+    videoRef.current.srcObject = streamRef.current;
+  }
+}, [started]);
 
   const sendFrame = useCallback(async () => {
     const video = videoRef.current;
