@@ -164,8 +164,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (started) {
-      intervalRef.current = setInterval(sendFrame, 200);
-    }
+intervalRef.current = setInterval(sendFrame, 100);    }
     return () => clearInterval(intervalRef.current);
   }, [started, sendFrame]);
 

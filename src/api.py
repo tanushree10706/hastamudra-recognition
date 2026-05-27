@@ -16,19 +16,20 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 import pickle
-import cv2
 import mediapipe as mp
 from PIL import Image
 import io
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
-# ── Load model ────────────────────────────────────────────────────────────────
+# -- Load model ----------------------------------------------------------------
 print("Loading model...")
 with open("models/random_forest.pkl", "rb") as f:
     model = pickle.load(f)
 print(f"  Classes: {model.classes_}")
 print("  Model ready!\n")
 
-# ── MediaPipe setup ───────────────────────────────────────────────────────────
+# -- MediaPipe setup -----------------------------------------------------------
 BaseOptions           = mp.tasks.BaseOptions
 HandLandmarker        = mp.tasks.vision.HandLandmarker
 HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
@@ -38,55 +39,55 @@ options = HandLandmarkerOptions(
     base_options=BaseOptions(model_asset_path="hand_landmarker.task"),
     running_mode=VisionRunningMode.IMAGE,
     num_hands=1,
-    min_hand_detection_confidence=0.7
+    min_hand_detection_confidence=0.5
 )
 
 landmarker = HandLandmarker.create_from_options(options)
+executor = ThreadPoolExecutor(max_workers=2)
 print("MediaPipe ready!\n")
 
-# ── Mudra metadata ────────────────────────────────────────────────────────────
+# -- Mudra metadata ------------------------------------------------------------
 MUDRA_DATA = {
     "Pataka": {
-        "meaning"   : "Flag",
-        "usage"     : "Represents clouds, forest, river, blessing",
-        "mythology" : "Used to depict Lord Vishnu's Sudarshana Chakra",
-        "rasa"      : "Shanta (Peace), Vira (Heroism)",
-        "emoji"     : "🚩"
+        "meaning"  : "Flag",
+        "usage"    : "Represents clouds, forest, river, blessing",
+        "mythology": "Used to depict Lord Vishnu's Sudarshana Chakra",
+        "rasa"     : "Shanta (Peace), Vira (Heroism)",
+        "emoji"    : "🚩"
     },
     "Tripataka": {
-        "meaning"   : "Three parts of a flag",
-        "usage"     : "Represents a crown, tree, flame of a lamp",
-        "mythology" : "Associated with Lord Shiva's trident",
-        "rasa"      : "Adbhuta (Wonder), Vira (Heroism)",
-        "emoji"     : "🔱"
+        "meaning"  : "Three parts of a flag",
+        "usage"    : "Represents a crown, tree, flame of a lamp",
+        "mythology": "Associated with Lord Shiva's trident",
+        "rasa"     : "Adbhuta (Wonder), Vira (Heroism)",
+        "emoji"    : "🔱"
     },
     "Mushti": {
-        "meaning"   : "Clenched fist",
-        "usage"     : "Represents holding something, combat, strength",
-        "mythology" : "Symbolizes the strength of Hanuman",
-        "rasa"      : "Raudra (Fury), Vira (Heroism)",
-        "emoji"     : "✊"
+        "meaning"  : "Clenched fist",
+        "usage"    : "Represents holding something, combat, strength",
+        "mythology": "Symbolizes the strength of Hanuman",
+        "rasa"     : "Raudra (Fury), Vira (Heroism)",
+        "emoji"    : "✊"
     },
     "Arala": {
-        "meaning"   : "Curved / Bent",
-        "usage"     : "Represents drinking nectar, the wind god Vayu",
-        "mythology" : "Associated with Vayu the wind deity",
-        "rasa"      : "Sringara (Love), Karuna (Compassion)",
-        "emoji"     : "🌬️"
+        "meaning"  : "Curved / Bent",
+        "usage"    : "Represents drinking nectar, the wind god Vayu",
+        "mythology": "Associated with Vayu the wind deity",
+        "rasa"     : "Sringara (Love), Karuna (Compassion)",
+        "emoji"    : "🌬️"
     },
     "Shikara": {
-        "meaning"   : "Peak / Mountain",
-        "usage"     : "Represents a bow, pillar, husband",
-        "mythology" : "Symbolizes Mount Meru, the cosmic mountain",
-        "rasa"      : "Adbhuta (Wonder), Shanta (Peace)",
-        "emoji"     : "🏔️"
+        "meaning"  : "Peak / Mountain",
+        "usage"    : "Represents a bow, pillar, husband",
+        "mythology": "Symbolizes Mount Meru, the cosmic mountain",
+        "rasa"     : "Adbhuta (Wonder), Shanta (Peace)",
+        "emoji"    : "🏔️"
     },
 }
 
-# ── FastAPI app ───────────────────────────────────────────────────────────────
+# -- FastAPI app ---------------------------------------------------------------
 app = FastAPI(title="Hasta Mudra Recognition API")
 
-# Allow React frontend to call this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -94,7 +95,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Normalize landmarks ───────────────────────────────────────────────────────
+# -- Normalize landmarks -------------------------------------------------------
 def normalize(hand):
     wrist = hand[0]
     scale = max(
@@ -110,32 +111,27 @@ def normalize(hand):
         ]
     return features
 
-# ── Health check ──────────────────────────────────────────────────────────────
+# -- Health check --------------------------------------------------------------
 @app.get("/")
 def root():
     return {"status": "ok", "message": "Hasta Mudra API is running"}
 
-# ── Predict endpoint ──────────────────────────────────────────────────────────
+# -- Predict endpoint ----------------------------------------------------------
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    """
-    Receives an image frame from the frontend.
-    Returns predicted mudra name, confidence, landmarks, and mudra info.
-    """
     try:
-        # Read image from request
         contents = await file.read()
-        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
-        frame = np.array(pil_image)
 
-        # Run MediaPipe
-        mp_image = mp.Image(
-            image_format=mp.ImageFormat.SRGB,
-            data=frame
-        )
-        result = landmarker.detect(mp_image)
+        def process():
+            pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+            pil_image = pil_image.resize((320, 240))
+            frame = np.array(pil_image)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+            return landmarker.detect(mp_image)
 
-        # No hand detected
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(executor, process)
+
         if not result.hand_landmarks:
             return {
                 "detected"  : False,
@@ -145,17 +141,13 @@ async def predict(file: UploadFile = File(...)):
                 "info"      : None,
             }
 
-        # Hand detected → predict
-        hand     = result.hand_landmarks[0]
-        features = normalize(hand)
+        hand         = result.hand_landmarks[0]
+        features     = normalize(hand)
         features_arr = np.array(features).reshape(1, -1)
-
-        prediction = model.predict(features_arr)[0]
-        proba      = model.predict_proba(features_arr)[0]
-        confidence = float(np.max(proba))
-
-        # Build landmarks list for frontend to draw skeleton
-        landmarks = [{"x": lm.x, "y": lm.y, "z": lm.z} for lm in hand]
+        prediction   = model.predict(features_arr)[0]
+        proba        = model.predict_proba(features_arr)[0]
+        confidence   = float(np.max(proba))
+        landmarks    = [{"x": lm.x, "y": lm.y, "z": lm.z} for lm in hand]
 
         return {
             "detected"  : True,
