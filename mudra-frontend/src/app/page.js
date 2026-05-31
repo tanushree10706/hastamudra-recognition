@@ -3,46 +3,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 const MUDRAS = [
-  {
-    name: "Pataka",
-    emoji: "🚩",
-    meaning: "Flag",
-    usage: "Represents clouds, forest, river, blessing",
-    mythology: "Used to depict Lord Vishnu's Sudarshana Chakra",
-    rasa: "Shanta (Peace), Vira (Heroism)",
-  },
-  {
-    name: "Tripataka",
-    emoji: "🔱",
-    meaning: "Three parts of a flag",
-    usage: "Represents a crown, tree, flame of a lamp",
-    mythology: "Associated with Lord Shiva's trident",
-    rasa: "Adbhuta (Wonder), Vira (Heroism)",
-  },
-  {
-    name: "Mushti",
-    emoji: "✊",
-    meaning: "Clenched fist",
-    usage: "Represents holding something, combat, strength",
-    mythology: "Symbolizes the strength of Hanuman",
-    rasa: "Raudra (Fury), Vira (Heroism)",
-  },
-  {
-    name: "Arala",
-    emoji: "🌬️",
-    meaning: "Curved / Bent",
-    usage: "Represents drinking nectar, the wind god Vayu",
-    mythology: "Associated with Vayu the wind deity",
-    rasa: "Sringara (Love), Karuna (Compassion)",
-  },
-  {
-    name: "Shikara",
-    emoji: "🏔️",
-    meaning: "Peak / Mountain",
-    usage: "Represents a bow, pillar, husband",
-    mythology: "Symbolizes Mount Meru, the cosmic mountain",
-    rasa: "Adbhuta (Wonder), Shanta (Peace)",
-  },
+  { name: "Pataka", emoji: "🚩", meaning: "Flag", sanskrit: "पताका", usage: "Represents clouds, forest, river, blessing", mythology: "Used to depict Lord Vishnu's Sudarshana Chakra", rasa: "Shanta (Peace), Vira (Heroism)" },
+  { name: "Tripataka", emoji: "🔱", meaning: "Three parts of a flag", sanskrit: "त्रिपताका", usage: "Represents a crown, tree, flame of a lamp", mythology: "Associated with Lord Shiva's trident", rasa: "Adbhuta (Wonder), Vira (Heroism)" },
+  { name: "Mushti", emoji: "✊", meaning: "Clenched fist", sanskrit: "मुष्टि", usage: "Represents holding something, combat, strength", mythology: "Symbolizes the strength of Hanuman", rasa: "Raudra (Fury), Vira (Heroism)" },
+  { name: "Arala", emoji: "🌬️", meaning: "Curved / Bent", sanskrit: "अराल", usage: "Represents drinking nectar, the wind god Vayu", mythology: "Associated with Vayu the wind deity", rasa: "Sringara (Love), Karuna (Compassion)" },
+  { name: "Shikara", emoji: "🏔️", meaning: "Peak / Mountain", sanskrit: "शिखर", usage: "Represents a bow, pillar, husband", mythology: "Symbolizes Mount Meru, the cosmic mountain", rasa: "Adbhuta (Wonder), Shanta (Peace)" },
 ];
 
 const CONNECTIONS = [
@@ -57,7 +22,10 @@ const CONNECTIONS = [
 export default function Home() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const overlayRef = useRef(null);
   const intervalRef = useRef(null);
+  const isProcessing = useRef(false);
+  const streamRef = useRef(null);
 
   const [started, setStarted] = useState(false);
   const [detected, setDetected] = useState(false);
@@ -65,12 +33,10 @@ export default function Home() {
   const [confidence, setConfidence] = useState(0);
   const [info, setInfo] = useState(null);
   const [landmarks, setLandmarks] = useState([]);
-  const [selected, setSelected] = useState(null);
+  const [showGallery, setShowGallery] = useState(false);
   const [error, setError] = useState(null);
 
-const streamRef = useRef(null);
-
-const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
@@ -81,16 +47,18 @@ const startCamera = useCallback(async () => {
     }
   }, []);
 
-useEffect(() => {
-  if (started && videoRef.current && streamRef.current) {
-    videoRef.current.srcObject = streamRef.current;
-  }
-}, [started]);
+  useEffect(() => {
+    if (started && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [started]);
 
   const sendFrame = useCallback(async () => {
+    if (isProcessing.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.readyState < 2) return;
+    isProcessing.current = true;
 
     const ctx = canvas.getContext("2d");
     canvas.width = video.videoWidth;
@@ -98,14 +66,11 @@ useEffect(() => {
     ctx.drawImage(video, 0, 0);
 
     canvas.toBlob(async (blob) => {
-      if (!blob) return;
+      if (!blob) { isProcessing.current = false; return; }
       const form = new FormData();
       form.append("file", blob, "frame.jpg");
       try {
-        const res = await fetch("http://127.0.0.1:8000/predict", {
-          method: "POST",
-          body: form,
-        });
+        const res = await fetch("http://127.0.0.1:8000/predict", { method: "POST", body: form });
         const data = await res.json();
         if (data.detected) {
           setDetected(true);
@@ -118,215 +83,234 @@ useEffect(() => {
           setLandmarks([]);
         }
       } catch {
-        setError("Cannot connect to backend. Is it running?");
+        setError("Backend not running");
+      } finally {
+        isProcessing.current = false;
       }
-    }, "image/jpeg", 0.8);
+    }, "image/jpeg", 0.5);
   }, []);
 
   useEffect(() => {
-    const overlay = document.getElementById("overlay-canvas");
+    const overlay = overlayRef.current;
     if (!overlay || !landmarks.length) {
-      if (overlay) {
-        const ctx = overlay.getContext("2d");
-        ctx.clearRect(0, 0, overlay.width, overlay.height);
-      }
+      if (overlay) overlay.getContext("2d").clearRect(0, 0, overlay.width, overlay.height);
       return;
     }
-    const ctx = overlay.getContext("2d");
     overlay.width = overlay.offsetWidth;
     overlay.height = overlay.offsetHeight;
+    const ctx = overlay.getContext("2d");
     ctx.clearRect(0, 0, overlay.width, overlay.height);
     const W = overlay.width;
     const H = overlay.height;
 
-    ctx.strokeStyle = "rgba(168, 85, 247, 0.6)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(183, 109, 255, 0.7)";
+    ctx.lineWidth = 1.5;
     CONNECTIONS.forEach(([s, e]) => {
-      const a = landmarks[s];
-      const b = landmarks[e];
+      const a = landmarks[s], b = landmarks[e];
       if (!a || !b) return;
       ctx.beginPath();
       ctx.moveTo((1 - a.x) * W, a.y * H);
       ctx.lineTo((1 - b.x) * W, b.y * H);
       ctx.stroke();
     });
-
     landmarks.forEach((lm) => {
       ctx.beginPath();
-      ctx.arc((1 - lm.x) * W, lm.y * H, 4, 0, Math.PI * 2);
-      ctx.fillStyle = "#f0abfc";
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1;
+      ctx.arc((1 - lm.x) * W, lm.y * H, 3, 0, Math.PI * 2);
+      ctx.fillStyle = "#b76dff";
       ctx.fill();
-      ctx.stroke();
     });
   }, [landmarks]);
 
   useEffect(() => {
-    if (started) {
-intervalRef.current = setInterval(sendFrame, 100);    }
+    if (started) intervalRef.current = setInterval(sendFrame, 300);
     return () => clearInterval(intervalRef.current);
   }, [started, sendFrame]);
 
-  const displayInfo = selected
-    ? MUDRAS.find((m) => m.name === selected.name)
-    : info
-    ? { ...info, name: mudra, emoji: info.emoji }
-    : null;
-
-  const displayName = selected ? selected.name : mudra;
+  const currentMudraInfo = mudra ? MUDRAS.find(m => m.name === mudra) : null;
 
   return (
-    <main style={{ minHeight: "100vh", color: "white", background: "linear-gradient(135deg, #0a0a0f 0%, #0f0a1e 50%, #0a0f1e 100%)", fontFamily: "system-ui, sans-serif" }}>
+    <div style={{ position: "fixed", inset: 0, background: "#000", overflow: "hidden", fontFamily: "'Space Mono', monospace" }}>
 
-      {/* Gradient orbs */}
-      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: 0, left: 0, width: "500px", height: "500px", borderRadius: "50%", opacity: 0.2, background: "radial-gradient(circle, #7c3aed, transparent)" }} />
-        <div style={{ position: "absolute", bottom: 0, right: 0, width: "400px", height: "400px", borderRadius: "50%", opacity: 0.15, background: "radial-gradient(circle, #db2777, transparent)" }} />
+      {/* Full screen video */}
+      {started && (
+        <video
+          ref={videoRef}
+          autoPlay muted playsInline
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", filter: "brightness(0.55) grayscale(0.15)" }}
+        />
+      )}
+
+      {/* Skeleton overlay */}
+      <canvas
+        ref={overlayRef}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 2 }}
+      />
+
+      {/* Corner brackets */}
+      {["tl","tr","bl","br"].map(pos => (
+        <div key={pos} style={{
+          position: "absolute", width: "32px", height: "32px", zIndex: 10,
+          ...(pos === "tl" ? { top: "24px", left: "24px", borderTop: "2px solid rgba(255,255,255,0.25)", borderLeft: "2px solid rgba(255,255,255,0.25)" } : {}),
+          ...(pos === "tr" ? { top: "24px", right: "24px", borderTop: "2px solid rgba(255,255,255,0.25)", borderRight: "2px solid rgba(255,255,255,0.25)" } : {}),
+          ...(pos === "bl" ? { bottom: "24px", left: "24px", borderBottom: "2px solid rgba(255,255,255,0.25)", borderLeft: "2px solid rgba(255,255,255,0.25)" } : {}),
+          ...(pos === "br" ? { bottom: "24px", right: "24px", borderBottom: "2px solid rgba(255,255,255,0.25)", borderRight: "2px solid rgba(255,255,255,0.25)" } : {}),
+        }} />
+      ))}
+
+      {/* Scanning line */}
+      {started && detected && (
+        <div style={{
+          position: "absolute", left: 0, right: 0, height: "2px", zIndex: 3, pointerEvents: "none",
+          background: "linear-gradient(90deg, transparent, rgba(183,109,255,0.6), transparent)",
+          animation: "scan 3s linear infinite",
+        }} />
+      )}
+
+      {/* Top bar */}
+      <header style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 32px", background: "linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)" }}>
+        <div style={{ fontSize: "18px", fontWeight: 700, letterSpacing: "3px", color: "#b76dff", textTransform: "uppercase" }}>
+          MUDRA_VISION
+        </div>
+        <div style={{ display: "flex", gap: "32px" }}>
+          <span style={{ color: "#b76dff", fontSize: "12px", letterSpacing: "1px", cursor: "pointer" }}>CAPTURE</span>
+          <span
+            onClick={() => setShowGallery(!showGallery)}
+            style={{ color: showGallery ? "#b76dff" : "rgba(255,255,255,0.4)", fontSize: "12px", letterSpacing: "1px", cursor: "pointer" }}
+          >
+            LIBRARY
+          </span>
+        </div>
+        {/* Confidence badge */}
+        {detected && (
+          <div style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", padding: "8px 14px" }}>
+            <div style={{ fontSize: "9px", letterSpacing: "2px", color: "rgba(255,255,255,0.4)", marginBottom: "2px" }}>CONFIDENCE</div>
+            <div style={{ fontSize: "20px", fontWeight: 600, color: "#4ae176" }}>{(confidence * 100).toFixed(1)}%</div>
+          </div>
+        )}
+      </header>
+
+      {/* Center title */}
+      <div style={{ position: "absolute", top: "80px", left: 0, right: 0, textAlign: "center", zIndex: 10 }}>
+        <h1 style={{ fontSize: "clamp(24px, 4vw, 42px)", fontWeight: 600, color: "white", margin: 0 }}>
+        kathak <span style={{ color: "#b76dff" }}>मुद्राः</span>
+        </h1>
       </div>
 
-      <div style={{ position: "relative", zIndex: 10, maxWidth: "1100px", margin: "0 auto", padding: "48px 24px" }}>
-
-        {/* Hero */}
-        <div style={{ textAlign: "center", marginBottom: "48px" }}>
-          <p style={{ color: "#a855f7", fontSize: "12px", fontWeight: 600, letterSpacing: "4px", textTransform: "uppercase", marginBottom: "12px" }}>
-            Bharatanatyam • Kathak • Classical Dance
+      {/* Not started — center prompt */}
+      {!started && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 10 }}>
+          <div style={{ fontSize: "48px", marginBottom: "24px" }}>🙏</div>
+          <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "12px", letterSpacing: "3px", marginBottom: "32px", textTransform: "uppercase" }}>
+            enable audio and camera access
           </p>
-          <h1 style={{ fontSize: "clamp(2rem, 5vw, 4rem)", fontWeight: 800, marginBottom: "16px", background: "linear-gradient(135deg, #fff 0%, #c084fc 50%, #f472b6 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            Hastamudra Detection
-          </h1>
-          <p style={{ color: "#9ca3af", fontSize: "1.1rem" }}>
-            Recognizing classical dance gestures in real-time using AI
-          </p>
+          <button
+            onClick={startCamera}
+            style={{ padding: "14px 48px", background: "transparent", border: "1px solid rgba(183,109,255,0.6)", borderRadius: "4px", color: "#b76dff", fontSize: "12px", letterSpacing: "3px", textTransform: "uppercase", cursor: "pointer" }}
+          >
+            BEGIN
+          </button>
+          {error && <p style={{ color: "#ff6b6b", marginTop: "16px", fontSize: "12px" }}>{error}</p>}
         </div>
+      )}
 
-        {/* Main grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "24px" }}>
-
-          {/* Camera */}
-          <div>
-            <div style={{ position: "relative", borderRadius: "16px", overflow: "hidden", aspectRatio: "16/9", background: "rgba(255,255,255,0.05)", backdropFilter: "blur(12px)", border: detected ? "1px solid rgba(168,85,247,0.6)" : "1px solid rgba(255,255,255,0.1)", boxShadow: detected ? "0 0 30px rgba(168,85,247,0.4)" : "none", transition: "all 0.3s ease" }}>
-
-              {!started ? (
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1a0533, #0d1533)" }}>
-                  <div style={{ fontSize: "4rem", marginBottom: "24px" }}>🙏</div>
-                  <h2 style={{ fontSize: "1.5rem", fontWeight: 600, marginBottom: "8px" }}>Ready to detect</h2>
-                  <p style={{ color: "#9ca3af", marginBottom: "32px", fontSize: "0.9rem" }}>Allow camera access to begin</p>
-                  <button onClick={startCamera} style={{ padding: "12px 32px", borderRadius: "50px", fontWeight: 600, color: "white", border: "none", cursor: "pointer", fontSize: "1rem", background: "linear-gradient(135deg, #7c3aed, #db2777)" }}>
-                    Enable Camera
-                  </button>
-                  {error && <p style={{ color: "#f87171", marginTop: "16px", fontSize: "0.85rem" }}>{error}</p>}
-                </div>
-              ) : (
-                <>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }}
-                  />
-                  <canvas id="overlay-canvas" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />
-
-                  {/* Status badge */}
-                  <div style={{ position: "absolute", top: "16px", left: "16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", borderRadius: "50px", fontSize: "12px", fontWeight: 500, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.1)", color: detected ? "#4ade80" : "#9ca3af" }}>
-                      <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: detected ? "#4ade80" : "#6b7280" }} />
-                      {detected ? "Detecting" : "No hand"}
-                    </div>
-                  </div>
-
-                  {/* Bottom label */}
-                  {detected && mudra ? (
-                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "24px", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }}>
-                      <p style={{ fontSize: "2.5rem", fontWeight: 800, background: "linear-gradient(135deg, #fff, #c084fc)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                        {mudra}
-                      </p>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "8px" }}>
-                        <div style={{ flex: 1, height: "4px", borderRadius: "4px", background: "rgba(255,255,255,0.1)" }}>
-                          <div style={{ height: "100%", borderRadius: "4px", background: "linear-gradient(90deg, #7c3aed, #f472b6)", width: `${confidence * 100}%`, transition: "width 0.3s ease" }} />
-                        </div>
-                        <span style={{ fontSize: "0.85rem", color: "#d1d5db" }}>{(confidence * 100).toFixed(0)}%</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <p style={{ color: "#6b7280", fontSize: "1rem" }}>Show a mudra to begin</p>
-                    </div>
-                  )}
-                </>
-              )}
+      {/* Left panel — frame rate / latency */}
+      {started && (
+        <div style={{ position: "absolute", left: "32px", top: "50%", transform: "translateY(-50%)", zIndex: 10, width: "140px" }}>
+          <div style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", borderRadius: "8px", padding: "16px" }}>
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "9px", letterSpacing: "2px", color: "rgba(255,255,255,0.4)", marginBottom: "6px" }}>FRAME_RATE</div>
+              <div style={{ height: "2px", background: "rgba(255,255,255,0.1)", borderRadius: "2px" }}>
+                <div style={{ height: "100%", width: "60%", background: "#b76dff", borderRadius: "2px" }} />
+              </div>
             </div>
-            <canvas ref={canvasRef} style={{ display: "none" }} />
-          </div>
-
-          {/* Right panel */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-
-            {/* Info card */}
-            <div style={{ borderRadius: "16px", padding: "24px", background: "rgba(255,255,255,0.05)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", minHeight: "200px" }}>
-              {displayInfo ? (
-                <>
-                  <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>{displayInfo.emoji}</div>
-                  <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "4px" }}>{displayName}</h2>
-                  <p style={{ color: "#a855f7", fontSize: "0.85rem", marginBottom: "16px" }}>"{displayInfo.meaning}"</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    <div>
-                      <p style={{ fontSize: "10px", color: "#6b7280", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "4px" }}>Usage</p>
-                      <p style={{ fontSize: "0.85rem", color: "#d1d5db" }}>{displayInfo.usage}</p>
-                    </div>
-                    <div>
-                      <p style={{ fontSize: "10px", color: "#6b7280", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "4px" }}>Mythology</p>
-                      <p style={{ fontSize: "0.85rem", color: "#d1d5db" }}>{displayInfo.mythology}</p>
-                    </div>
-                    <div>
-                      <p style={{ fontSize: "10px", color: "#6b7280", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "4px" }}>Rasa</p>
-                      <p style={{ fontSize: "0.85rem", color: "#d1d5db" }}>{displayInfo.rasa}</p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-                  <div style={{ fontSize: "2rem", marginBottom: "12px" }}>🙏</div>
-                  <p style={{ color: "#6b7280", fontSize: "0.85rem" }}>
-                    {started ? "Detecting mudra..." : "Start camera to see mudra info"}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Mudra gallery */}
-            <div style={{ borderRadius: "16px", padding: "16px", background: "rgba(255,255,255,0.05)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)" }}>
-              <p style={{ fontSize: "10px", color: "#6b7280", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "12px", paddingLeft: "4px" }}>
-                Supported Mudras
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                {MUDRAS.map((m) => (
-                  <button
-                    key={m.name}
-                    onClick={() => setSelected(selected?.name === m.name ? null : m)}
-                    style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "12px", textAlign: "left", border: mudra === m.name && detected ? "1px solid rgba(168,85,247,0.4)" : "1px solid transparent", background: mudra === m.name && detected ? "rgba(168,85,247,0.2)" : selected?.name === m.name ? "rgba(255,255,255,0.1)" : "transparent", cursor: "pointer", color: "white", width: "100%", transition: "all 0.2s ease" }}
-                  >
-                    <span style={{ fontSize: "1.2rem" }}>{m.emoji}</span>
-                    <div>
-                      <p style={{ fontSize: "0.85rem", fontWeight: 500, margin: 0 }}>{m.name}</p>
-                      <p style={{ fontSize: "0.75rem", color: "#6b7280", margin: 0 }}>{m.meaning}</p>
-                    </div>
-                    {mudra === m.name && detected && (
-                      <div style={{ marginLeft: "auto", width: "8px", height: "8px", borderRadius: "50%", background: "#a855f7" }} />
-                    )}
-                  </button>
-                ))}
+            <div>
+              <div style={{ fontSize: "9px", letterSpacing: "2px", color: "rgba(255,255,255,0.4)", marginBottom: "6px" }}>LATENCY</div>
+              <div style={{ height: "2px", background: "rgba(255,255,255,0.1)", borderRadius: "2px" }}>
+                <div style={{ height: "100%", width: "20%", background: "#b76dff", borderRadius: "2px" }} />
               </div>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Footer */}
-        <div style={{ textAlign: "center", marginTop: "48px", color: "#4b5563", fontSize: "0.85rem" }}>
-          Built with AI + Computer Vision • Random Forest + MediaPipe
+      {/* Status indicator */}
+      {started && (
+        <div style={{ position: "absolute", bottom: "80px", left: "50%", transform: "translateX(-50%)", zIndex: 10, textAlign: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "8px" }}>
+            <div style={{
+              width: "8px", height: "8px", borderRadius: "50%",
+              background: detected ? "#4ae176" : "rgba(255,255,255,0.3)",
+              boxShadow: detected ? "0 0 8px #4ae176" : "none",
+            }} />
+            <span style={{ fontSize: "10px", letterSpacing: "2px", color: "rgba(255,255,255,0.4)" }}>
+              {detected ? "DETECTING" : "ALIGN YOUR HAND"}
+            </span>
+          </div>
+          <div style={{ fontSize: "10px", letterSpacing: "1px", color: "rgba(255,255,255,0.25)" }}>
+            current mudra
+          </div>
+          <div style={{ fontSize: "14px", letterSpacing: "2px", color: detected ? "white" : "rgba(255,255,255,0.3)", marginTop: "4px" }}>
+            {detected && mudra ? mudra.toUpperCase() : "UNKNOWN"}
+          </div>
         </div>
-      </div>
-    </main>
+      )}
+
+      {/* Bottom left — mudra info card */}
+      {detected && currentMudraInfo && (
+        <div style={{ position: "absolute", bottom: "40px", left: "32px", zIndex: 10, maxWidth: "280px" }}>
+          <div style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", padding: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4ae176" }} />
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "white", letterSpacing: "1px" }}>
+                {currentMudraInfo.name} <span style={{ color: "#b76dff" }}>{currentMudraInfo.sanskrit}</span>
+              </h3>
+            </div>
+            <p style={{ margin: "0 0 8px", fontSize: "11px", color: "rgba(255,255,255,0.5)", letterSpacing: "1px" }}>
+              "{currentMudraInfo.meaning}"
+            </p>
+            <p style={{ margin: 0, fontSize: "12px", color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
+              {currentMudraInfo.usage}
+            </p>
+            <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+              <span style={{ fontSize: "9px", letterSpacing: "2px", color: "rgba(255,255,255,0.3)" }}>RASA • </span>
+              <span style={{ fontSize: "11px", color: "#b76dff" }}>{currentMudraInfo.rasa}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Library panel */}
+      {showGallery && (
+        <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "280px", zIndex: 20, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(16px)", borderLeft: "1px solid rgba(255,255,255,0.1)", padding: "80px 20px 20px", overflowY: "auto" }}>
+          <div style={{ fontSize: "9px", letterSpacing: "3px", color: "rgba(255,255,255,0.3)", marginBottom: "16px" }}>MUDRA LIBRARY</div>
+          {MUDRAS.map(m => (
+            <div key={m.name} style={{ padding: "14px", borderRadius: "8px", marginBottom: "8px", background: mudra === m.name && detected ? "rgba(183,109,255,0.15)" : "rgba(255,255,255,0.03)", border: mudra === m.name && detected ? "1px solid rgba(183,109,255,0.4)" : "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "18px" }}>{m.emoji}</span>
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "white" }}>{m.name}</div>
+                  <div style={{ fontSize: "10px", color: "#b76dff" }}>{m.sanskrit}</div>
+                </div>
+                {mudra === m.name && detected && (
+                  <div style={{ marginLeft: "auto", width: "6px", height: "6px", borderRadius: "50%", background: "#4ae176", boxShadow: "0 0 6px #4ae176" }} />
+                )}
+              </div>
+              <p style={{ margin: 0, fontSize: "11px", color: "rgba(255,255,255,0.4)", lineHeight: 1.5 }}>{m.meaning}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Hidden canvas */}
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+        @keyframes scan {
+          0% { top: 0%; }
+          100% { top: 100%; }
+        }
+      `}</style>
+    </div>
   );
 }
