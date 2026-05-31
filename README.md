@@ -132,7 +132,7 @@ UI updates with mudra name + skeleton overlay
 
 ## 👩‍💻 About
 
-Built by **Tanushree** — Kathak dancer and ML engineer.
+Built by **Tanushree** — Kathak dancer.
 
 This project was born from a desire to bridge classical Indian dance with modern AI — making traditional art forms accessible and recognizable through technology.
 
